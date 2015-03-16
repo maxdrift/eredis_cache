@@ -1,0 +1,18 @@
+%% -*- mode: erlang -*-
+{application, eredis_cache,
+ [
+  {description, "Erlang caching library based on Redis"},
+  {vsn, "0.0.1"},
+  {modules, []},
+  {registered, []},
+  {applications,
+   [
+    kernel,
+    stdlib,
+    eredis_pool,
+    quintana
+   ]
+  },
+  {env, []},
+  {mod, {eredis_cache_app, []}}
+ ]}.
