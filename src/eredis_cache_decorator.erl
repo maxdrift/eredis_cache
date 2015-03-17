@@ -17,7 +17,10 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
         {ok, undefined} ->
             fun () ->
                     Res = Fun(Args),
-                    ok = eredis_cache:set(PoolName, Key, Res, Opts),
+                    case Res of
+                        {error, _} -> ok;
+                        R -> ok = eredis_cache:set(PoolName, Key, R, Opts)
+                    end,
                     Res
             end;
         {ok, Result} ->
