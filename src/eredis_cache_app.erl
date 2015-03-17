@@ -11,6 +11,8 @@
 
 -export([start/2, stop/1]).
 
+%% Application callbacks
+
 start(_StartType, _StartArgs) ->
     eredis_pool:start(),
     eredis_cache_sup:start_link().

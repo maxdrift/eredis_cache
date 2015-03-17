@@ -10,11 +10,19 @@
 
 -include("eredis_cache.hrl").
 
+-export([start/0, stop/0]).
+
 -export([
          get/2,
          set/4,
          invalidate/2
         ]).
+
+start() ->
+    application:start(?MODULE).
+
+stop() ->
+    application:stop(?MODULE).
 
 get(PoolName, Key) ->
     case eredis_pool:q(PoolName, ["GET", Key]) of
