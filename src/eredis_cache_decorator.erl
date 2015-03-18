@@ -10,20 +10,25 @@
 
 -export([eredis_cache_pt/3]).
 
+-spec eredis_cache_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
+                             fun(() -> term()).
 eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     Key = get_key(Module, FunctionAtom, Args, PoolName, Opts),
     FromCache = eredis_cache:get(PoolName, Key),
     case FromCache of
         {ok, undefined} ->
+            lager:info("Miss.."),
             fun () ->
                     Res = Fun(Args),
-                    case Res of
-                        {error, _} -> ok;
-                        R -> ok = eredis_cache:set(PoolName, Key, R, Opts)
+                    CacheErrors = proplists:get_value(cache_errors, Opts, false),
+                    case {Res, CacheErrors} of
+                        {{error, _}, false} -> ok;
+                        {R, _} -> ok = eredis_cache:set(PoolName, Key, R, Opts)
                     end,
                     Res
             end;
         {ok, Result} ->
+            lager:info("Hit.."),
             fun() -> Result end;
         {error, Err} ->
             throw({error, {eredis_cache_pt, Err}})
