@@ -33,14 +33,12 @@ get(PoolName, Key) ->
 
 set(PoolName, Key, Value, Opts) ->
     BinValue = term_to_binary(Value),
-    Validity = case proplists:get_value(validity, Opts) of
-                   undefined -> ?DEF_VALIDITY;
-                   Val -> Val
-               end,
-    [{ok, <<"OK">>},
-     {ok, <<"1">>}] = eredis_pool:qp(PoolName,
-                                     [["SET", Key, BinValue],
-                                      ["EXPIRE", Key, Validity]]),
+    Validity = proplists:get_value(validity, Opts, ?DEF_VALIDITY),
+    Fun = fun(Worker) ->
+                  eredis:q(Worker, ["SET", Key, BinValue]),
+                  eredis:q(Worker, ["EXPIRE", Key, Validity])
+          end,
+    {ok, [<<"OK">>, <<"1">>]} = eredis_pool:transaction(PoolName, Fun),
     ok.
 
 invalidate(PoolName, Key) ->
