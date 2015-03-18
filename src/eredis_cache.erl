@@ -41,6 +41,10 @@ set(PoolName, Key, Value, Opts) ->
     {ok, [<<"OK">>, <<"1">>]} = eredis_pool:transaction(PoolName, Fun),
     ok.
 
-invalidate(PoolName, Key) ->
-    {ok, <<"1">>} = eredis_pool:q(PoolName, ["EXPIRE", Key, 0]),
+invalidate(PoolName, Keys) when is_list(Keys) ->
+    lists:foreach(fun(Key) ->
+                          ok = invalidate(PoolName, Key)
+                  end, Keys);
+invalidate(PoolName, Key) when is_binary(Key) ->
+    {ok, <<"1">>} = eredis_pool:q(PoolName, ["DEL", Key]),
     ok.
