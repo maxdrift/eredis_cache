@@ -8,7 +8,9 @@
 -include_lib("decorator_pt/include/decorator_pt.hrl").
 
 -define(DEFAULT_POOL, eredis_cache_pool).
--define(CACHE_VALIDITY, 1).
+-define(DEFAULT_VALIDITY, 1).
+-define(DEFAULT_PREFIX, <<"test_prefix.">>).
+-define(DEFAULT_DEC_KEY, <<"custom_key">>).
 -define(DEFAULT_KEY, <<"foo">>).
 -define(DEFAULT_VAL, <<"bar">>).
 
@@ -37,6 +39,9 @@ all() ->
     , t_invalidate_pattern
     , t_decorator_cached
     , t_decorator_expired
+    , t_decorator_prefix
+    , t_decorator_custom_key
+    , t_decorator_prefix_and_custom_key
     ].
 
 %% Tests
@@ -44,25 +49,25 @@ all() ->
 t_cached(Config) ->
     Key = ?config(key1, Config),
     Value = ?config(val1, Config),
-    Opts = [{validity, ?CACHE_VALIDITY}],
+    Opts = [{validity, ?DEFAULT_VALIDITY}],
     ok = eredis_cache:set(?DEFAULT_POOL, Key, Value, Opts),
     {ok, Value} = eredis_cache:get(?DEFAULT_POOL, Key).
 
 t_expired(Config) ->
     Key = ?config(key1, Config),
     Value = ?config(val1, Config),
-    Opts = [{validity, ?CACHE_VALIDITY}],
+    Opts = [{validity, ?DEFAULT_VALIDITY}],
     ok = eredis_cache:set(?DEFAULT_POOL, Key, Value, Opts),
-    ok = timer:sleep(2000 * ?CACHE_VALIDITY),
+    ok = timer:sleep(2000 * ?DEFAULT_VALIDITY),
     {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, Key),
     ok.
 
 t_get_keys(Config) ->
     Key1 = ?config(key1, Config),
     Key2 = ?config(key2, Config),
-    Key3 = <<"notquitefoo">>,
+    Key3 = ?config(key3, Config),
     Value = ?config(val1, Config),
-    Opts = [{validity, 10 * ?CACHE_VALIDITY}],
+    Opts = [{validity, 10 * ?DEFAULT_VALIDITY}],
     ok = eredis_cache:set(?DEFAULT_POOL, Key1, Value, Opts),
     ok = eredis_cache:set(?DEFAULT_POOL, Key2, Value, Opts),
     ok = eredis_cache:set(?DEFAULT_POOL, Key3, Value, Opts),
@@ -75,7 +80,7 @@ t_get_keys(Config) ->
 t_invalidate_single(Config) ->
     Key = ?config(key1, Config),
     Value = ?config(val1, Config),
-    Opts = [{validity, 10 * ?CACHE_VALIDITY}],
+    Opts = [{validity, 10 * ?DEFAULT_VALIDITY}],
     ok = eredis_cache:set(?DEFAULT_POOL, Key, Value, Opts),
     ok = eredis_cache:invalidate(?DEFAULT_POOL, Key),
     {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, Key),
@@ -85,7 +90,7 @@ t_invalidate_multiple(Config) ->
     Key1 = ?config(key1, Config),
     Key2 = ?config(key2, Config),
     Value = ?config(val1, Config),
-    Opts = [{validity, 10 * ?CACHE_VALIDITY}],
+    Opts = [{validity, 10 * ?DEFAULT_VALIDITY}],
     ok = eredis_cache:set(?DEFAULT_POOL, Key1, Value, Opts),
     ok = eredis_cache:set(?DEFAULT_POOL, Key2, Value, Opts),
     ok = eredis_cache:invalidate(?DEFAULT_POOL, [Key1, Key2]),
@@ -96,9 +101,9 @@ t_invalidate_multiple(Config) ->
 t_invalidate_pattern(Config) ->
     Key1 = ?config(key1, Config),
     Key2 = ?config(key2, Config),
-    Key3 = <<"notquitefoo">>,
+    Key3 = ?config(key3, Config),
     Value = ?config(val1, Config),
-    Opts = [{validity, 10 * ?CACHE_VALIDITY}],
+    Opts = [{validity, 10 * ?DEFAULT_VALIDITY}],
     ok = eredis_cache:set(?DEFAULT_POOL, Key1, Value, Opts),
     ok = eredis_cache:set(?DEFAULT_POOL, Key2, Value, Opts),
     ok = eredis_cache:set(?DEFAULT_POOL, Key3, Value, Opts),
@@ -111,22 +116,70 @@ t_invalidate_pattern(Config) ->
 t_decorator_cached(_Config) ->
     Value = erlang:now(),
     {Value, Timestamp} = echo(Value),
-    ok = timer:sleep(500 * ?CACHE_VALIDITY),
+    ok = timer:sleep(500 * ?DEFAULT_VALIDITY),
     {Value, Timestamp} = echo(Value),
     ok.
 
 t_decorator_expired(_Config) ->
     Value = erlang:now(),
     {Value, Timestamp} = echo(Value),
-    ok = timer:sleep(2000 * ?CACHE_VALIDITY),
+    ok = timer:sleep(2000 * ?DEFAULT_VALIDITY),
     {Value, Timestamp2} = echo(Value),
     true = Timestamp < Timestamp2,
     ok.
 
+t_decorator_prefix(_Config) ->
+    Value = erlang:now(),
+    {Value, Timestamp} = echo2(Value),
+    ok = timer:sleep(500 * ?DEFAULT_VALIDITY),
+    Prefix = ?DEFAULT_PREFIX,
+    PrefixSize = byte_size(Prefix),
+    Pattern = << Prefix/binary, <<"*">>/binary >>,
+    [Expected] = eredis_cache:get_keys(?DEFAULT_POOL, Pattern),
+    << Prefix:PrefixSize/binary, _/binary >> = Expected,
+    {Value, Timestamp} = echo2(Value),
+    ok.
+
+t_decorator_custom_key(_Config) ->
+    Value = erlang:now(),
+    {Value, Timestamp} = echo3(Value),
+    ok = timer:sleep(500 * ?DEFAULT_VALIDITY),
+    [?DEFAULT_DEC_KEY] = eredis_cache:get_keys(?DEFAULT_POOL, ?DEFAULT_DEC_KEY),
+    {Value, Timestamp} = echo3(Value),
+    ok.
+
+t_decorator_prefix_and_custom_key(_Config) ->
+    Value = erlang:now(),
+    {Value, Timestamp} = echo4(Value),
+    ok = timer:sleep(500 * ?DEFAULT_VALIDITY),
+    FinalKey = << ?DEFAULT_PREFIX/binary, ?DEFAULT_DEC_KEY/binary >>,
+    [FinalKey] = eredis_cache:get_keys(?DEFAULT_POOL, FinalKey),
+    {Value, Timestamp} = echo4(Value),
+    ok.
+
 %% Internal functions
 
-?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?CACHE_VALIDITY}]).
+?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY}]).
 echo(Value) ->
+    Timestamp = erlang:now(),
+    {Value, Timestamp}.
+
+?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY},
+                              {key_prefix, ?DEFAULT_PREFIX}]).
+echo2(Value) ->
+    Timestamp = erlang:now(),
+    {Value, Timestamp}.
+
+?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY},
+                              {custom_key, ?DEFAULT_DEC_KEY}]).
+echo3(Value) ->
+    Timestamp = erlang:now(),
+    {Value, Timestamp}.
+
+?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY},
+                              {custom_key, ?DEFAULT_DEC_KEY},
+                              {key_prefix, ?DEFAULT_PREFIX}]).
+echo4(Value) ->
     Timestamp = erlang:now(),
     {Value, Timestamp}.
 
@@ -144,7 +197,6 @@ wrap_value(Val) ->
 create_test_vars(_TestCase, Config) ->
     [{key1, wrap_value(?DEFAULT_KEY)},
      {key2, wrap_value(?DEFAULT_KEY)},
-     {key3, wrap_value(?DEFAULT_KEY)},
-     {key4, wrap_value(?DEFAULT_KEY)},
+     {key3, wrap_value(<<"notquitefoo">>)},
      {val1, wrap_value(?DEFAULT_VAL)}
      | Config].

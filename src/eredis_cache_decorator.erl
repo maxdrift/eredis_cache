@@ -35,11 +35,15 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     end.
 
 get_key(Module, FunctionAtom, Args, PoolName, Opts) ->
-    case proplists:get_value(custom_key, Opts) of
-        Module when is_atom(Module) ->
-            apply(Module, generate_key, [PoolName, Module, FunctionAtom, Args]);
-        undefined ->
-            {decorated, Module, FunctionAtom, erlang:phash2(Args)};
-        {arg, N} when is_integer(N) ->
-            lists:nth(N, Args)
-    end.
+    Prefix = proplists:get_value(key_prefix, Opts, <<>>),
+    K = case proplists:get_value(custom_key, Opts) of
+            Module when is_atom(Module) ->
+                apply(Module, generate_key, [PoolName, Module, FunctionAtom, Args]);
+            {arg, N} when is_integer(N) ->
+                lists:nth(N, Args);
+            Custom when is_binary(Custom) ->
+                Custom;
+            undefined ->
+                term_to_binary({decorated, Module, FunctionAtom, erlang:phash2(Args)})
+        end,
+    << Prefix/binary, K/binary >>.

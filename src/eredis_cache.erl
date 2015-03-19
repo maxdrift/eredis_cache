@@ -52,7 +52,7 @@ invalidate(PoolName, Keys) when is_list(Keys) ->
                           ok = invalidate(PoolName, Key)
                   end, Keys);
 invalidate(PoolName, Key) when is_binary(Key) ->
-    {ok, <<"1">>} = eredis_pool:q(PoolName, ["DEL", Key]),
+    {ok, _} = eredis_pool:q(PoolName, ["DEL", Key]),
     ok.
 
 invalidate_pattern(PoolName, Pattern) ->
