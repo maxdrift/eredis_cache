@@ -15,7 +15,9 @@
 -export([
          get/2,
          set/4,
-         invalidate/2
+         get_keys/2,
+         invalidate/2,
+         invalidate_pattern/2
         ]).
 
 start() ->
@@ -41,6 +43,10 @@ set(PoolName, Key, Value, Opts) ->
     {ok, [<<"OK">>, <<"1">>]} = eredis_pool:transaction(PoolName, Fun),
     ok.
 
+get_keys(PoolName, Pattern) ->
+    {ok, Keys} = eredis_pool:q(PoolName, ["KEYS", Pattern]),
+    Keys.
+
 invalidate(PoolName, Keys) when is_list(Keys) ->
     lists:foreach(fun(Key) ->
                           ok = invalidate(PoolName, Key)
@@ -48,3 +54,16 @@ invalidate(PoolName, Keys) when is_list(Keys) ->
 invalidate(PoolName, Key) when is_binary(Key) ->
     {ok, <<"1">>} = eredis_pool:q(PoolName, ["DEL", Key]),
     ok.
+
+invalidate_pattern(PoolName, Pattern) ->
+    {ok, [NextCursor, NextKeys]} = eredis_pool:q(PoolName,
+                                                 ["SCAN", 0, "MATCH", Pattern]),
+    invalidate_pattern(PoolName, Pattern, NextCursor, NextKeys).
+
+invalidate_pattern(PoolName, _Pattern, <<"0">>, Keys) ->
+    invalidate(PoolName, Keys);
+invalidate_pattern(PoolName, Pattern, Cursor, Keys) ->
+    invalidate(PoolName, Keys),
+    {ok, [NextCursor, NextKeys]} = eredis_pool:q(PoolName,
+                                                 ["SCAN", Cursor, "MATCH", Pattern]),
+    invalidate_pattern(PoolName, Pattern, NextCursor, NextKeys).
