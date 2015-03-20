@@ -8,7 +8,7 @@
 -module(eredis_cache_decorator).
 -author('Riccardo Massari <maxdrift85@gmail.com>').
 
--export([eredis_cache_pt/3]).
+-export([eredis_cache_pt/3, eredis_cache_inv_pt/3]).
 
 -spec eredis_cache_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
                              fun(() -> term()).
@@ -32,6 +32,21 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
             fun() -> Result end;
         {error, Err} ->
             throw({error, {eredis_cache_pt, Err}})
+    end.
+
+-spec eredis_cache_inv_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
+                             fun(() -> term()).
+eredis_cache_inv_pt(Fun, Args, {_Module, _FunctionAtom, PoolName, Opts}) ->
+    Pattern = proplists:get_value(pattern, Opts),
+    case Pattern of
+        undefined ->
+            fun () -> Fun(Args) end;
+        Pattern ->
+            fun() ->
+                    Res = Fun(Args),
+                    eredis_cache:invalidate_pattern(PoolName, Pattern),
+                    Res
+            end
     end.
 
 get_key(Module, FunctionAtom, Args, PoolName, Opts) ->

@@ -27,6 +27,7 @@ init_per_testcase(TestCase, Config) ->
     create_test_vars(TestCase, Config).
 
 end_per_testcase(_TestCase, _Config) ->
+    {ok, <<"OK">>} = eredis_pool:q(?DEFAULT_POOL, ["FLUSHDB"]),
     ok.
 
 all() ->
@@ -42,6 +43,7 @@ all() ->
     , t_decorator_prefix
     , t_decorator_custom_key
     , t_decorator_prefix_and_custom_key
+    , t_decorator_invalidate
     ].
 
 %% Tests
@@ -157,6 +159,20 @@ t_decorator_prefix_and_custom_key(_Config) ->
     {Value, Timestamp} = echo4(Value),
     ok.
 
+t_decorator_invalidate(_Config) ->
+    Value = erlang:now(),
+    {Value, Timestamp} = echo2(Value),
+    ok = timer:sleep(100 * ?DEFAULT_VALIDITY),
+    Prefix = ?DEFAULT_PREFIX,
+    PrefixSize = byte_size(Prefix),
+    Pattern = << Prefix/binary, <<"*">>/binary >>,
+    [Expected] = eredis_cache:get_keys(?DEFAULT_POOL, Pattern),
+    << Prefix:PrefixSize/binary, _/binary >> = Expected,
+    {ok, <<"something">>} = set_something(<<"something">>),
+    {Value, Timestamp2} = echo2(Value),
+    true = Timestamp < Timestamp2,
+    ok.
+
 %% Internal functions
 
 ?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY}]).
@@ -182,6 +198,11 @@ echo3(Value) ->
 echo4(Value) ->
     Timestamp = erlang:now(),
     {Value, Timestamp}.
+
+?EREDIS_CACHE_INVALIDATE(?DEFAULT_POOL,
+                         [{pattern, <<?DEFAULT_PREFIX/binary, <<"*">>/binary>>}]).
+set_something(Value) ->
+    {ok, Value}.
 
 timestamp_usecs() ->
     {Megasecs, Secs, Microsecs} = os:timestamp(),
