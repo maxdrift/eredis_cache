@@ -10,43 +10,73 @@
 
 -export([eredis_cache_pt/3, eredis_cache_inv_pt/3]).
 
+-define(EREDIS_CACHE_FOLSOM_NAME(CacheName, Stat),
+        <<"eredis_cache.stats.", CacheName/binary, ".", Stat/binary>>).
+
 -spec eredis_cache_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
                              fun(() -> term()).
 eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
-    Key = get_key(Module, FunctionAtom, Args, PoolName, Opts),
-    FromCache = eredis_cache:get(PoolName, Key),
+    {Prefix, Key} = get_key(Module, FunctionAtom, Args, PoolName, Opts),
+    FullKey = <<Prefix/binary, Key/binary>>,
+    FromCache = eredis_cache:get(PoolName, FullKey),
     case FromCache of
         {ok, undefined} ->
-            lager:info("Miss.."),
+            quintana:notify_spiral(
+              {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"miss">>), 1}),
+            lager:debug("Eredis cache miss.."),
             fun () ->
                     Res = Fun(Args),
                     CacheErrors = proplists:get_value(cache_errors, Opts, false),
                     case {Res, CacheErrors} of
                         {{error, _}, false} -> ok;
-                        {R, _} -> ok = eredis_cache:set(PoolName, Key, R, Opts)
+                        {R, _} -> ok = eredis_cache:set(PoolName, FullKey, R, Opts)
                     end,
                     Res
             end;
         {ok, Result} ->
-            lager:info("Hit.."),
+            quintana:notify_spiral(
+              {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"hit">>), 1}),
+            lager:debug("Eredis cache hit.."),
             fun() -> Result end;
+        {error, no_connection} ->
+            lager:error("Eredis cache has no connection to Redis"),
+            fun () -> Fun(Args) end;
         {error, Err} ->
             throw({error, {eredis_cache_pt, Err}})
     end.
 
 -spec eredis_cache_inv_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
                              fun(() -> term()).
-eredis_cache_inv_pt(Fun, Args, {_Module, _FunctionAtom, PoolName, Opts}) ->
+eredis_cache_inv_pt(Fun, Args, {Module, _FunctionAtom, PoolName, Opts}) ->
     Pattern = proplists:get_value(pattern, Opts),
+    fun () ->
+            Res = Fun(Args),
+            ok = exec_invalidation(Module, PoolName, Res, Pattern),
+            Res
+    end.
+
+exec_invalidation(Module, PoolName, Res, Pattern) ->
     case Pattern of
         undefined ->
-            fun () -> Fun(Args) end;
-        Pattern ->
-            fun() ->
-                    Res = Fun(Args),
-                    eredis_cache:invalidate_pattern(PoolName, Pattern),
-                    Res
-            end
+            ok;
+        {F, 1} when is_atom(F) ->
+            Value = apply(Module, F, [Res]),
+            InvRes = eredis_cache:invalidate_pattern(PoolName, Value),
+            ok = check_invalidation_result(InvRes);
+        Pattern when is_binary(Pattern) ->
+            InvRes = eredis_cache:invalidate_pattern(PoolName, Pattern),
+            ok = check_invalidation_result(InvRes)
+    end.
+
+check_invalidation_result(Result) ->
+    case Result of
+        ok ->
+            ok;
+        {error, no_connection} ->
+            lager:error("Eredis cache has no connection to Redis"),
+            ok;
+        {error, Err} ->
+            throw({error, {eredis_cache_inv_pt, Err}})
     end.
 
 get_key(Module, FunctionAtom, Args, PoolName, Opts) ->
@@ -61,4 +91,4 @@ get_key(Module, FunctionAtom, Args, PoolName, Opts) ->
             undefined ->
                 term_to_binary({decorated, Module, FunctionAtom, erlang:phash2(Args)})
         end,
-    << Prefix/binary, K/binary >>.
+    {Prefix, K}.
