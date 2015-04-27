@@ -39,7 +39,7 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
             lager:debug("Eredis cache hit.."),
             fun() -> Result end;
         {error, no_connection} ->
-            lager:error("Eredis cache has no connection to Redis"),
+            lager:warning("Eredis cache has no connection to Redis"),
             fun () -> Fun(Args) end;
         {error, Err} ->
             throw({error, {eredis_cache_pt, Err}})
@@ -73,7 +73,7 @@ check_invalidation_result(Result) ->
         ok ->
             ok;
         {error, no_connection} ->
-            lager:error("Eredis cache has no connection to Redis"),
+            lager:warning("Eredis cache has no connection to Redis"),
             ok;
         {error, Err} ->
             throw({error, {eredis_cache_inv_pt, Err}})
