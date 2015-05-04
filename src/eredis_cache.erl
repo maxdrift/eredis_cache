@@ -10,7 +10,7 @@
 
 -include_lib("eredis_cache/include/eredis_cache.hrl").
 
--export([start/0, stop/0]).
+-export([start_cache/3, stop_cache/1]).
 
 -export([
          get/2,
@@ -20,11 +20,11 @@
          invalidate_pattern/2
         ]).
 
-start() ->
-    application:start(?MODULE).
+start_cache(CacheName, PoolArgs, WorkerArgs) ->
+    eredis_pool_sup:create_pool(CacheName, PoolArgs, WorkerArgs).
 
-stop() ->
-    application:stop(?MODULE).
+stop_cache(CacheName) ->
+    eredis_pool_sup:delete_pool(CacheName).
 
 get(PoolName, Key) when is_binary(Key) ->
     case eredis_pool:q(PoolName, ["GET", Key]) of
