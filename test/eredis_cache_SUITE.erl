@@ -9,6 +9,7 @@
 
 -define(DEFAULT_POOL, eredis_cache_pool).
 -define(NO_REDIS_POOL, eredis_cache_pool_no_redis).
+-define(RUNTIME_POOL, eredis_cache_runtime_pool).
 -define(DEFAULT_VALIDITY, 1).
 -define(DEFAULT_PREFIX, <<"test_prefix.">>).
 -define(DEFAULT_DEC_KEY, <<"custom_key">>).
@@ -19,10 +20,8 @@ init_per_suite(Config) ->
     {ok, Apps} = application:ensure_all_started(eredis_cache),
     [{started_apps, Apps}|Config].
 
-end_per_suite(Config) ->
-    lists:foreach(fun(App) ->
-                          application:stop(App)
-                  end, ?config(started_apps, Config)).
+end_per_suite(_Config) ->
+    ok.
 
 init_per_testcase(TestCase, Config) ->
     create_test_vars(TestCase, Config).
@@ -52,11 +51,17 @@ groups() ->
       , t_decorator_invalidate
       , t_decorator_invalidate_custom_fun
       ]},
+     {start_stop_cache, [],
+      [
+       t_start_stop_cache_custom_params
+      , t_start_stop_cache_default_params
+      ]},
      {redis_offline_on_startup, [],
       [
        t_apis_not_crashing
       , t_cache_decorator_not_crashing
       , t_invalidate_decorator_not_crashing
+      , t_create_fake_cache
       ]}
     ].
 
@@ -64,6 +69,7 @@ all() ->
     [
      {group, cache_apis},
      {group, decorators},
+     {group, start_stop_cache},
      {group, redis_offline_on_startup}
     ].
 
@@ -159,7 +165,7 @@ t_decorator_prefix(_Config) ->
     ok = timer:sleep(timer:seconds(?DEFAULT_VALIDITY div 2)),
     Prefix = ?DEFAULT_PREFIX,
     PrefixSize = byte_size(Prefix),
-    Pattern = << Prefix/binary, <<"*">>/binary >>,
+    Pattern = <<Prefix/binary, "*">>,
     {ok, [Expected]} = eredis_cache:get_keys(?DEFAULT_POOL, Pattern),
     << Prefix:PrefixSize/binary, _/binary >> = Expected,
     {Value, Timestamp} = echo2(Value),
@@ -187,7 +193,7 @@ t_decorator_invalidate(_Config) ->
     {Value, Timestamp} = echo2(Value),
     Prefix = ?DEFAULT_PREFIX,
     PrefixSize = byte_size(Prefix),
-    Pattern = << Prefix/binary, "*">>,
+    Pattern = <<Prefix/binary, "*">>,
     {ok, [Expected]} = eredis_cache:get_keys(?DEFAULT_POOL, Pattern),
     << Prefix:PrefixSize/binary, _/binary >> = Expected,
     {ok, <<"something">>} = set_something(<<"something">>),
@@ -200,13 +206,46 @@ t_decorator_invalidate_custom_fun(_Config) ->
     {Value, Timestamp} = echo2(Value),
     Prefix = ?DEFAULT_PREFIX,
     PrefixSize = byte_size(Prefix),
-    Pattern = << Prefix/binary, <<"*">>/binary >>,
+    Pattern = <<Prefix/binary, "*">>,
     {ok, [Expected]} = eredis_cache:get_keys(?DEFAULT_POOL, Pattern),
     << Prefix:PrefixSize/binary, _/binary >> = Expected,
     {ok, ?DEFAULT_PREFIX} = set_something2(?DEFAULT_PREFIX),
     {Value, Timestamp2} = echo2(Value),
     true = Timestamp < Timestamp2,
     ok.
+
+%% Start/Stop cache
+
+t_start_stop_cache_custom_params(Config) ->
+    Host = "localhost",
+    Port = 6379,
+    Password = "",
+    Size = 1,
+    MaxOverflow = 0,
+    RequireRedis = true,
+    SizeArgs = {Size, MaxOverflow},
+    WorkerArgs = [
+                  {host, Host},
+                  {port, Port},
+                  {password, Password},
+                  {require_redis_on_start, RequireRedis}
+                 ],
+    {ok, _} = eredis_cache:start_cache(?RUNTIME_POOL, SizeArgs, WorkerArgs),
+    Key = ?config(key1, Config),
+    Value = ?config(val1, Config),
+    Opts = [{validity, ?DEFAULT_VALIDITY}],
+    ok = eredis_cache:set(?RUNTIME_POOL, Key, Value, Opts),
+    {ok, Value} = eredis_cache:get(?RUNTIME_POOL, Key),
+    ok = eredis_cache:stop_cache(?RUNTIME_POOL).
+
+t_start_stop_cache_default_params(Config) ->
+    {ok, _} = eredis_cache:start_cache(?RUNTIME_POOL, {1, 0}, []),
+    Key = ?config(key1, Config),
+    Value = ?config(val1, Config),
+    Opts = [{validity, ?DEFAULT_VALIDITY}],
+    ok = eredis_cache:set(?RUNTIME_POOL, Key, Value, Opts),
+    {ok, Value} = eredis_cache:get(?RUNTIME_POOL, Key),
+    ok = eredis_cache:stop_cache(?RUNTIME_POOL).
 
 %% Redis offline on startup
 
@@ -222,16 +261,31 @@ t_cache_decorator_not_crashing(_Config) ->
     {Value, Timestamp} = echo5(Value),
     ok = timer:sleep(timer:seconds(?DEFAULT_VALIDITY div 2)),
     {Value, Timestamp2} = echo5(Value),
-    true = Timestamp < Timestamp2,
-    ok.
+    true = Timestamp < Timestamp2.
 
 t_invalidate_decorator_not_crashing(_Config) ->
     Value = erlang:now(),
     {Value, Timestamp} = echo5(Value),
     {ok, <<"something">>} = set_something3(<<"something">>),
     {Value, Timestamp2} = echo5(Value),
-    true = Timestamp < Timestamp2,
-    ok.
+    true = Timestamp < Timestamp2.
+
+t_create_fake_cache(Config) ->
+    Host = "cache.intentionally.disabled",
+    Size = 1,
+    MaxOverflow = 0,
+    RequireRedis = false,
+    SizeArgs = {Size, MaxOverflow},
+    WorkerArgs = [
+                  {host, Host},
+                  {require_redis_on_start, RequireRedis}
+                 ],
+    {ok, _} = eredis_cache:start_cache(?RUNTIME_POOL, SizeArgs, WorkerArgs),
+    Key = ?config(key1, Config),
+    Value = ?config(val1, Config),
+    Opts = [{validity, ?DEFAULT_VALIDITY}],
+    {error, no_connection} = eredis_cache:set(?RUNTIME_POOL, Key, Value, Opts),
+    {error, no_connection} = eredis_cache:get(?RUNTIME_POOL, Key).
 
 %% Decorated setters
 
@@ -267,7 +321,7 @@ echo5(Value) ->
 %% Decorated setters
 
 ?EREDIS_CACHE_INVALIDATE(?DEFAULT_POOL,
-                         [{pattern, <<?DEFAULT_PREFIX/binary, <<"*">>/binary>>}]).
+                         [{pattern, <<?DEFAULT_PREFIX/binary, "*">>}]).
 set_something(Value) ->
     {ok, Value}.
 
@@ -277,10 +331,10 @@ set_something2(Value) ->
     {ok, Value}.
 
 get_pattern({ok, Result}) ->
-    <<Result/binary, <<"*">>/binary >>.
+    <<Result/binary, "*">>.
 
 ?EREDIS_CACHE_INVALIDATE(?NO_REDIS_POOL,
-                         [{pattern, <<?DEFAULT_PREFIX/binary, <<"*">>/binary>>}]).
+                         [{pattern, <<?DEFAULT_PREFIX/binary, "*">>}]).
 set_something3(Value) ->
     {ok, Value}.
 
