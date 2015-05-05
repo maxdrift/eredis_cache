@@ -17,6 +17,7 @@
                              fun(() -> term()).
 eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     Prefix = proplists:get_value(key_prefix, Opts, <<>>),
+    Timer = quintana:begin_timed(?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"get_time">>)),
     Key = get_key(Module, FunctionAtom, Args, PoolName, Opts),
     FullKey = <<Prefix/binary, Key/binary>>,
     FromCache = eredis_cache:get(PoolName, FullKey),
@@ -31,16 +32,27 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
                         {{error, _}, false} -> ok;
                         {R, _} -> ok = eredis_cache:set(PoolName, FullKey, R, Opts)
                     end,
+                    ok = quintana:notify_timed(Timer),
                     Res
             end;
         {ok, Result} ->
             quintana:notify_spiral(
               {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"hit">>), 1}),
-            fun() -> Result end;
+            fun() ->
+                    ok = quintana:notify_timed(Timer),
+                    Result
+            end;
         {error, no_connection} ->
             lager:warning("Eredis cache has no connection to Redis"),
-            fun () -> Fun(Args) end;
+            fun () ->
+                    Result = Fun(Args),
+                    ok = quintana:notify_timed(Timer),
+                    Result
+            end;
         {error, Err} ->
+            quintana:notify_spiral(
+              {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"get_error">>), 1}),
+            ok = quintana:notify_timed(Timer),
             throw({error, {eredis_cache_pt, Err}})
     end.
 
