@@ -320,8 +320,8 @@ echo5(Value) ->
 
 %% Decorated setters
 
-?EREDIS_CACHE_INVALIDATE(?DEFAULT_POOL,
-                         [{pattern, <<?DEFAULT_PREFIX/binary, "*">>}]).
+?EREDIS_CACHE_INVALIDATE(?DEFAULT_POOL, [{key_prefix, ?DEFAULT_PREFIX},
+                                         {pattern, <<"*">>}]).
 set_something(Value) ->
     {ok, Value}.
 

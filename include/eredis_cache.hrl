@@ -1,6 +1,9 @@
 -define(DEF_VALIDITY, 60).
 -define(DEF_ERR_VALIDITY, 0).
 
+-define(EREDIS_CACHE_FOLSOM_NAME(CacheName, Stat),
+        <<"eredis_cache.stats.", CacheName/binary, Stat/binary>>).
+
 -compile([{parse_transform, decorator_pt_core}]).
 
 %% Parse transform for the ?EREDIS_CACHE decorator

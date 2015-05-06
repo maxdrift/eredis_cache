@@ -17,7 +17,8 @@
          set/4,
          get_keys/2,
          invalidate/2,
-         invalidate_pattern/2
+         invalidate_pattern/2,
+         invalidate_pattern/3
         ]).
 
 start_cache(CacheName, PoolArgs, WorkerArgs) ->
@@ -77,6 +78,15 @@ invalidate_pattern(PoolName, Pattern) when is_binary(Pattern) ->
             invalidate_pattern(PoolName, Pattern, NextCursor, NextKeys);
         {error, _}=E -> E
     end.
+
+invalidate_pattern(PoolName, Prefix, Pattern) when is_binary(Prefix),
+                                                   is_binary(Pattern) ->
+    quintana:notify_spiral({?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"invalidate">>), 1}),
+    Timer = quintana:begin_timed(?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"invalidate_latency">>)),
+    FullPattern = <<Prefix/binary, Pattern/binary>>,
+    Res = invalidate_pattern(PoolName, FullPattern),
+    ok = quintana:notify_timed(Timer),
+    Res.
 
 invalidate_pattern(PoolName, _Pattern, <<"0">>, Keys) ->
     invalidate(PoolName, Keys);
