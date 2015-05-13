@@ -14,6 +14,7 @@
 
 -export([
          get/2,
+         set/3,
          set/4,
          get_keys/2,
          invalidate/2,
@@ -34,10 +35,12 @@ get(PoolName, Key) when is_binary(Key) ->
         {error, _}=E -> E
     end.
 
-set(PoolName, Key, Value, Opts) when is_binary(Key),
-                                     is_list(Opts)->
+set(PoolName, Key, Value) when is_binary(Key) ->
+    set(PoolName, Key, Value, ?DEF_VALIDITY).
+
+set(PoolName, Key, Value, Validity) when is_binary(Key),
+                                         is_integer(Validity) ->
     BinValue = term_to_binary(Value),
-    Validity = proplists:get_value(validity, Opts, ?DEF_VALIDITY),
     Fun = fun(Worker) ->
                   case eredis:q(Worker, ["SET", Key, BinValue]) of
                       {ok, <<"QUEUED">>} ->

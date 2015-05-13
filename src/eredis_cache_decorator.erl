@@ -29,7 +29,10 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
                     CacheErrors = proplists:get_value(cache_errors, Opts, false),
                     case {Res, CacheErrors} of
                         {{error, _}, false} -> ok;
-                        {R, _} -> ok = eredis_cache:set(PoolName, FullKey, R, Opts)
+                        {error, false} -> ok;
+                        {R, _} ->
+                            Val = proplists:get_value(validity, Opts, ?DEF_VALIDITY),
+                            ok = eredis_cache:set(PoolName, FullKey, R, Val)
                     end,
                     ok = quintana:notify_timed(Timer),
                     Res
@@ -95,7 +98,11 @@ get_key(Module, FunctionAtom, Args, PoolName, Opts) ->
         Module when is_atom(Module) ->
             apply(Module, generate_key, [PoolName, Module, FunctionAtom, Args]);
         {arg, N} when is_integer(N) ->
-            lists:nth(N, Args);
+            Arg = lists:nth(N, Args),
+            case is_binary(Arg) of
+                true -> Arg;
+                false -> integer_to_binary(erlang:phash2(Arg))
+            end;
         Custom when is_binary(Custom) ->
             Custom;
         undefined ->
