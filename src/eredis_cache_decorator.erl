@@ -19,7 +19,8 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     Timer = quintana:begin_timed(?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"get_latency">>)),
     Key = get_key(Module, FunctionAtom, Args, PoolName, Opts),
     FullKey = <<Prefix/binary, Key/binary>>,
-    FromCache = eredis_cache:get(PoolName, FullKey),
+    Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
+    FromCache = eredis_cache:get(PoolName, FullKey, Timeout),
     case FromCache of
         {ok, undefined} ->
             quintana:notify_spiral(
@@ -32,7 +33,7 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
                         {error, false} -> ok;
                         {R, _} ->
                             Val = proplists:get_value(validity, Opts, ?DEF_VALIDITY),
-                            ok = eredis_cache:set(PoolName, FullKey, R, Val)
+                            ok = eredis_cache:set(PoolName, FullKey, R, Val, Timeout)
                     end,
                     ok = quintana:notify_timed(Timer),
                     Res
@@ -63,22 +64,23 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
 eredis_cache_inv_pt(Fun, Args, {Module, _FunctionAtom, PoolName, Opts}) ->
     Prefix = proplists:get_value(key_prefix, Opts, <<>>),
     Pattern = proplists:get_value(pattern, Opts),
+    Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
     fun () ->
             Res = Fun(Args),
-            ok = exec_invalidation(Module, PoolName, Res, Prefix, Pattern),
+            ok = exec_invalidation(Module, PoolName, Res, Prefix, Pattern, Timeout),
             Res
     end.
 
-exec_invalidation(Module, PoolName, Res, Prefix, Pattern) ->
+exec_invalidation(Module, PoolName, Res, Prefix, Pattern, Timeout) ->
     case Pattern of
         undefined ->
             ok;
         {F, 1} when is_atom(F) ->
             Value = apply(Module, F, [Res]),
-            InvRes = eredis_cache:invalidate_pattern(PoolName, Prefix, Value),
+            InvRes = eredis_cache:invalidate_pattern(PoolName, Prefix, Value, Timeout),
             ok = check_invalidation_result(InvRes);
         Pattern when is_binary(Pattern) ->
-            InvRes = eredis_cache:invalidate_pattern(PoolName, Prefix, Pattern),
+            InvRes = eredis_cache:invalidate_pattern(PoolName, Prefix, Pattern, Timeout),
             ok = check_invalidation_result(InvRes)
     end.
 
