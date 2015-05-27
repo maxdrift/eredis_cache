@@ -32,8 +32,12 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
                         {{error, _}, false} -> ok;
                         {error, false} -> ok;
                         {R, _} ->
-                            Val = proplists:get_value(validity, Opts, ?DEF_VALIDITY),
-                            ok = eredis_cache:set(PoolName, FullKey, R, Val, Timeout)
+                            Val = proplists:get_value(validity, Opts,
+                                                      ?DEF_VALIDITY),
+                            Compression = proplists:get_value(compression, Opts,
+                                                              ?DEF_COMPRESSION),
+                            ok = eredis_cache:set(PoolName, FullKey, R,
+                                                  Val, Compression, Timeout)
                     end,
                     ok = quintana:notify_timed(Timer),
                     Res
@@ -60,7 +64,7 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     end.
 
 -spec eredis_cache_inv_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
-                             fun(() -> term()).
+                                 fun(() -> term()).
 eredis_cache_inv_pt(Fun, Args, {Module, _FunctionAtom, PoolName, Opts}) ->
     Prefix = proplists:get_value(key_prefix, Opts, <<>>),
     Pattern = proplists:get_value(pattern, Opts),

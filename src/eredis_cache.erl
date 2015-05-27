@@ -18,6 +18,7 @@
          set/3,
          set/4,
          set/5,
+         set/6,
          get_keys/2,
          get_keys/3,
          invalidate/2,
@@ -49,12 +50,18 @@ set(PoolName, Key, Value) when is_binary(Key) ->
 
 set(PoolName, Key, Value, Validity) when is_binary(Key),
                                          is_integer(Validity) ->
-    set(PoolName, Key, Value, Validity, ?TIMEOUT).
+    set(PoolName, Key, Value, Validity, ?DEF_COMPRESSION).
 
-set(PoolName, Key, Value, Validity, Timeout) when is_binary(Key),
-                                                  is_integer(Validity),
-                                                  is_integer(Timeout) ->
-    BinValue = term_to_binary(Value),
+set(PoolName, Key, Value, Validity, Compression) when is_binary(Key),
+                                                      is_integer(Validity),
+                                                      is_integer(Compression) ->
+    set(PoolName, Key, Value, Validity, Compression, ?TIMEOUT).
+
+set(PoolName, Key, Value, Validity, Compression, Timeout) when is_binary(Key),
+                                                               is_integer(Validity),
+                                                               is_integer(Compression),
+                                                               is_integer(Timeout) ->
+    BinValue = term_to_binary(Value, [{compressed, Compression}]),
     Fun = fun(Worker) ->
                   case eredis:q(Worker, ["SET", Key, BinValue], Timeout) of
                       {ok, <<"QUEUED">>} ->
