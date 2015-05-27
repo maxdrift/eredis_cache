@@ -1,4 +1,4 @@
--define(TIMEOUT, 15000).
+-define(TIMEOUT, 5000).
 -define(DEF_VALIDITY, 60).
 -define(DEF_ERR_VALIDITY, 0).
 
