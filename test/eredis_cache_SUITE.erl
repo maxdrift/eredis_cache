@@ -11,6 +11,8 @@
 -define(NO_REDIS_POOL, eredis_cache_pool_no_redis).
 -define(RUNTIME_POOL, eredis_cache_runtime_pool).
 -define(DEFAULT_VALIDITY, 1).
+-define(HIGH_COMPRESSION, 9).
+-define(NO_COMPRESSION, 0).
 -define(DEFAULT_PREFIX, <<"test_prefix.">>).
 -define(DEFAULT_DEC_KEY, <<"custom_key">>).
 -define(DEFAULT_KEY, <<"foo">>).
@@ -36,6 +38,8 @@ groups() ->
       [
        t_cached
       , t_expired
+      , t_set_compressed
+      , t_set_not_compressed
       , t_get_keys
       , t_invalidate_single
       , t_invalidate_multiple
@@ -52,6 +56,7 @@ groups() ->
       , t_decorator_custom_key_by_arg
       , t_decorator_invalidate
       , t_decorator_invalidate_custom_fun
+      , t_decorator_compression
       ]},
      {start_stop_cache, [],
       [
@@ -90,6 +95,30 @@ t_expired(Config) ->
     ok = timer:sleep(timer:seconds(?DEFAULT_VALIDITY * 2)),
     {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, Key),
     ok.
+
+t_set_compressed(Config) ->
+    Key = ?config(key1, Config),
+    random:seed(now()),
+    Value = [{random:uniform(10), random:uniform(10)} || _ <- lists:seq(1, 10)],
+    BinValue = term_to_binary(Value, [{compressed, ?NO_COMPRESSION}]),
+    ok = eredis_cache:set(?DEFAULT_POOL, Key, Value,
+                          ?DEFAULT_VALIDITY, ?HIGH_COMPRESSION),
+    {ok, StoredVal} = eredis_pool:q(?DEFAULT_POOL, ["GET", Key]),
+    true = byte_size(BinValue) > byte_size(StoredVal),
+    true = BinValue =/= StoredVal,
+    {ok, Value} = eredis_cache:get(?DEFAULT_POOL, Key).
+
+t_set_not_compressed(Config) ->
+    Key = ?config(key1, Config),
+    random:seed(now()),
+    Value = [{random:uniform(10), random:uniform(10)} || _ <- lists:seq(1, 10)],
+    BinValue = term_to_binary(Value, [{compressed, ?NO_COMPRESSION}]),
+    ok = eredis_cache:set(?DEFAULT_POOL, Key, Value,
+                          ?DEFAULT_VALIDITY, ?NO_COMPRESSION),
+    {ok, StoredVal} = eredis_pool:q(?DEFAULT_POOL, ["GET", Key]),
+    true = byte_size(BinValue) == byte_size(StoredVal),
+    true = BinValue =:= StoredVal,
+    {ok, Value} = eredis_cache:get(?DEFAULT_POOL, Key).
 
 t_get_keys(Config) ->
     Key1 = ?config(key1, Config),
@@ -231,6 +260,15 @@ t_decorator_invalidate_custom_fun(_Config) ->
     true = Timestamp < Timestamp2,
     ok.
 
+t_decorator_compression(_Config) ->
+    Value = erlang:now(),
+    random:seed(Value),
+    Payload = [{random:uniform(10), random:uniform(10)} || _ <- lists:seq(1, 10)],
+    {Value, Timestamp, Payload} = echo7(Value, Payload),
+    ok = timer:sleep(timer:seconds(?DEFAULT_VALIDITY div 2)),
+    {Value, Timestamp, Payload} = echo7(Value, Payload),
+    ok.
+
 %% Start/Stop cache
 
 t_start_stop_cache_custom_params(Config) ->
@@ -338,6 +376,13 @@ echo5(Value) ->
 echo6(Value) ->
     Timestamp = erlang:now(),
     {Value, Timestamp}.
+
+?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY},
+                              {custom_key, {arg, 1}},
+                              {compression, ?HIGH_COMPRESSION}]).
+echo7(Value, Payload) ->
+    Timestamp = erlang:now(),
+    {Value, Timestamp, Payload}.
 
 %% Decorated setters
 
