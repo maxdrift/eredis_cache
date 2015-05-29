@@ -2,7 +2,7 @@
 {application, eredis_cache,
  [
   {description, "Erlang caching library based on Redis"},
-  {vsn, "2.0.1"},
+  {vsn, "2.1.1"},
   {modules, []},
   {registered, []},
   {applications,
