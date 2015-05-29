@@ -3,7 +3,8 @@ PLT_APPS = $(shell ls $(ERL_LIB_DIR) | grep -v interface | grep -v tsung | sed -
 DIALYZER_OPTS = -Wno_undefined_callbacks --fullpath
 ERL_FLAGS = "-config test.config"
 REBAR = ./rebar
-.PHONY: all build_plt compile compile-fast doc clean depclean distclean dialyze nuke test build-travis dialyzer-travis
+.PHONY: all build_plt compile compile-fast doc clean depclean distclean \
+	dialyze nuke test build-travis dialyzer-travis
 
 all: compile
 
@@ -14,6 +15,9 @@ build_plt:
 		elif [ $$? -ne 0 ] ; then \
 		echo "Error during build_plt" ; exit 1 ; \
 		fi
+
+clean:
+	@$(REBAR) skip_deps=true clean
 
 compile: deps
 	@$(REBAR) compile
@@ -26,9 +30,6 @@ deps:
 
 doc:
 	@$(REBAR) skip_deps=true doc
-
-clean:
-	@$(REBAR) skip_deps=true clean
 
 depclean:
 	@$(REBAR) clean
