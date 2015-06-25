@@ -109,6 +109,9 @@ get_key(Module, FunctionAtom, Args, PoolName, Opts) ->
                 true -> Arg;
                 false -> integer_to_binary(erlang:phash2(Arg))
             end;
+        {arg, Idxs} when is_tuple(Idxs) ->
+            NewArgs = [lists:nth(Idx, Args) || Idx <- tuple_to_list(Idxs)],
+            integer_to_binary(erlang:phash2(NewArgs));
         Custom when is_binary(Custom) ->
             Custom;
         undefined ->

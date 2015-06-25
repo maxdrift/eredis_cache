@@ -54,6 +54,7 @@ groups() ->
       , t_decorator_prefix_and_custom_key
       , t_decorator_custom_key_by_binary_arg
       , t_decorator_custom_key_by_arg
+      , t_decorator_custom_key_by_selected_args
       , t_decorator_invalidate
       , t_decorator_invalidate_custom_fun
       , t_decorator_compression
@@ -234,6 +235,18 @@ t_decorator_custom_key_by_arg(_Config) ->
     {Value, Timestamp} = echo6(Value),
     ok.
 
+t_decorator_custom_key_by_selected_args(_Config) ->
+    {MegaSecs, Secs, MicroSecs} = erlang:now(),
+    Sum = Secs + MicroSecs,
+    {MegaSecs, Secs, MicroSecs, Sum, Timestamp} = echo8(MegaSecs, Secs,
+                                                        MicroSecs, Sum),
+    ExpKey = integer_to_binary(erlang:phash2([MegaSecs, Secs, Sum])),
+    ok = timer:sleep(timer:seconds(?DEFAULT_VALIDITY div 2)),
+    {ok, [ExpKey]} = eredis_cache:get_keys(?DEFAULT_POOL, ExpKey),
+    {MegaSecs, Secs, MicroSecs, Sum, Timestamp} = echo8(MegaSecs, Secs,
+                                                        MicroSecs, Sum),
+    ok.
+
 t_decorator_invalidate(_Config) ->
     Value = erlang:now(),
     {Value, Timestamp} = echo2(Value),
@@ -383,6 +396,12 @@ echo6(Value) ->
 echo7(Value, Payload) ->
     Timestamp = erlang:now(),
     {Value, Timestamp, Payload}.
+
+?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY},
+                              {custom_key, {arg, {1, 2, 4}}}]).
+echo8(Value1, Value2, Value3, Value4) ->
+    Timestamp = erlang:now(),
+    {Value1, Value2, Value3, Value4, Timestamp}.
 
 %% Decorated setters
 
