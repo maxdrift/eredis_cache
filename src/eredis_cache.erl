@@ -23,6 +23,7 @@
          get_keys/3,
          invalidate/2,
          invalidate/3,
+         invalidate/4,
          invalidate_pattern/2,
          invalidate_pattern/3,
          invalidate_pattern/4
@@ -85,25 +86,45 @@ get_keys(PoolName, Pattern, Timeout) when is_binary(Pattern),
     eredis_pool:q(PoolName, ["KEYS", Pattern], Timeout).
 
 invalidate(PoolName, Key) ->
-    invalidate(PoolName, Key, ?TIMEOUT).
+    invalidate(PoolName, <<>>, Key, ?TIMEOUT).
 
-invalidate(_PoolName, [], _) ->
+invalidate(PoolName, Key, Timeout) ->
+    invalidate(PoolName, <<>>, Key, Timeout).
+
+invalidate(PoolName, Prefix, Key, Timeout) when is_binary(Prefix),
+                                                is_integer(Timeout) ->
+    delete(PoolName, Prefix, Key, Timeout).
+
+delete(_PoolName, _, [], _) ->
     ok;
-invalidate(PoolName, [Key | Rest], Timeout) ->
-    case invalidate(PoolName, Key, Timeout) of
+delete(PoolName, Prefix, [Key | Rest], Timeout) ->
+    case delete(PoolName, Prefix, Key, Timeout) of
         ok ->
-            invalidate(PoolName, Rest, Timeout);
+            delete(PoolName, Prefix, Rest, Timeout);
         {error, _}=E -> E
     end;
-invalidate(PoolName, Key, Timeout) when is_binary(Key),
-                                        is_integer(Timeout) ->
+delete(PoolName, <<>>, Key, Timeout) when is_binary(Key),
+                                          is_integer(Timeout) ->
+    delete(PoolName, Key, Timeout);
+delete(PoolName, Prefix, Key, Timeout) when is_binary(Prefix),
+                                            is_binary(Key),
+                                            is_integer(Timeout) ->
+    quintana:notify_spiral({?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"invalidate">>), 1}),
+    Timer = quintana:begin_timed(?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"invalidate_latency">>)),
+    FullKey = <<Prefix/binary, Key/binary>>,
+    R = delete(PoolName, FullKey, Timeout),
+    ok = quintana:notify_timed(Timer),
+    R.
+
+delete(PoolName, Key, Timeout) when is_binary(Key),
+                                    is_integer(Timeout) ->
     case eredis_pool:q(PoolName, ["DEL", Key], Timeout) of
         {ok, _} -> ok;
         {error, _}=E -> E
     end.
 
-invalidate_pattern(PoolName, Prefix) ->
-    invalidate_pattern(PoolName, Prefix, ?TIMEOUT).
+invalidate_pattern(PoolName, Pattern) ->
+    invalidate_pattern(PoolName, Pattern, ?TIMEOUT).
 
 invalidate_pattern(PoolName, Prefix, Pattern) when is_binary(Prefix),
                                                    is_binary(Pattern) ->
@@ -114,7 +135,7 @@ invalidate_pattern(PoolName, Pattern, Timeout) when is_binary(Pattern),
                          ["SCAN", 0, "MATCH", Pattern], Timeout),
     case Resp of
         {ok, [NextCursor, NextKeys]} ->
-            invalidate_pattern(PoolName, Pattern, NextCursor, NextKeys, Timeout);
+            scan_and_delete(PoolName, Pattern, NextCursor, NextKeys, Timeout);
         {error, _}=E -> E
     end.
 
@@ -128,16 +149,16 @@ invalidate_pattern(PoolName, Prefix, Pattern, Timeout) when is_binary(Prefix),
     ok = quintana:notify_timed(Timer),
     Res.
 
-invalidate_pattern(PoolName, _Pattern, <<"0">>, Keys, Timeout) ->
-    invalidate(PoolName, Keys, Timeout);
-invalidate_pattern(PoolName, Pattern, Cursor, Keys, Timeout) ->
-    case invalidate(PoolName, Keys, Timeout) of
+scan_and_delete(PoolName, _Pattern, <<"0">>, Keys, Timeout) ->
+    invalidate(PoolName, <<>>, Keys, Timeout);
+scan_and_delete(PoolName, Pattern, Cursor, Keys, Timeout) ->
+    case invalidate(PoolName, <<>>, Keys, Timeout) of
         ok ->
             Resp = eredis_pool:q(PoolName,
                                  ["SCAN", Cursor, "MATCH", Pattern], Timeout),
             case Resp of
                 {ok, [NextCursor, NextKeys]} ->
-                    invalidate_pattern(PoolName, Pattern, NextCursor, NextKeys, Timeout);
+                    scan_and_delete(PoolName, Pattern, NextCursor, NextKeys, Timeout);
                 {error, _}=E -> E
             end;
         {error, _}=E -> E

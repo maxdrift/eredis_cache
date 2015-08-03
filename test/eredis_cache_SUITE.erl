@@ -17,6 +17,7 @@
 -define(DEFAULT_DEC_KEY, <<"custom_key">>).
 -define(DEFAULT_KEY, <<"foo">>).
 -define(DEFAULT_VAL, <<"bar">>).
+-define(DEFAULT_TIMEOUT, 5000).
 
 init_per_suite(Config) ->
     {ok, Apps} = application:ensure_all_started(eredis_cache),
@@ -42,7 +43,9 @@ groups() ->
       , t_set_not_compressed
       , t_get_keys
       , t_invalidate_single
+      , t_invalidate_single_prefix
       , t_invalidate_multiple
+      , t_invalidate_multiple_prefix
       , t_invalidate_pattern
       ]},
      {decorators, [],
@@ -145,6 +148,17 @@ t_invalidate_single(Config) ->
     {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, Key),
     ok.
 
+t_invalidate_single_prefix(Config) ->
+    Prefix = ?DEFAULT_PREFIX,
+    Key = ?config(key1, Config),
+    Value = ?config(val1, Config),
+    Validity = 10 * ?DEFAULT_VALIDITY,
+    FullKey = <<Prefix/binary, Key/binary>>,
+    ok = eredis_cache:set(?DEFAULT_POOL, FullKey, Value, Validity),
+    ok = eredis_cache:invalidate(?DEFAULT_POOL, Prefix, Key, ?DEFAULT_TIMEOUT),
+    {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, FullKey),
+    ok.
+
 t_invalidate_multiple(Config) ->
     Key1 = ?config(key1, Config),
     Key2 = ?config(key2, Config),
@@ -155,6 +169,22 @@ t_invalidate_multiple(Config) ->
     ok = eredis_cache:invalidate(?DEFAULT_POOL, [Key1, Key2]),
     {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, Key1),
     {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, Key2),
+    ok.
+
+t_invalidate_multiple_prefix(Config) ->
+    Prefix = ?DEFAULT_PREFIX,
+    Key1 = ?config(key1, Config),
+    Key2 = ?config(key2, Config),
+    Value = ?config(val1, Config),
+    Validity = 10 * ?DEFAULT_VALIDITY,
+    FullKey1 = <<Prefix/binary, Key1/binary>>,
+    FullKey2 = <<Prefix/binary, Key2/binary>>,
+    ok = eredis_cache:set(?DEFAULT_POOL, FullKey1, Value, Validity),
+    ok = eredis_cache:set(?DEFAULT_POOL, FullKey2, Value, Validity),
+    ok = eredis_cache:invalidate(?DEFAULT_POOL, Prefix,
+                                 [Key1, Key2], ?DEFAULT_TIMEOUT),
+    {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, FullKey1),
+    {ok, undefined} = eredis_cache:get(?DEFAULT_POOL, FullKey2),
     ok.
 
 t_invalidate_pattern(Config) ->
