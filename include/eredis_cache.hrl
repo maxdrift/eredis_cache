@@ -1,4 +1,5 @@
--define(TIMEOUT, 5000).
+-define(DEF_TIMEOUT, 5000).
+-define(DEF_POOL_TIMEOUT, 5000).
 -define(DEF_COMPRESSION, 0).
 -define(DEF_VALIDITY, 60).
 -define(DEF_ERR_VALIDITY, 0).

@@ -19,7 +19,7 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     Timer = quintana:begin_timed(?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"get_latency">>)),
     Key = get_key(Module, FunctionAtom, Args, PoolName, Opts),
     FullKey = <<Prefix/binary, Key/binary>>,
-    Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
+    Timeout = proplists:get_value(timeout, Opts, ?DEF_TIMEOUT),
     FromCache = eredis_cache:get(PoolName, FullKey, Timeout),
     case FromCache of
         {ok, undefined} ->
@@ -68,7 +68,7 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
 eredis_cache_inv_pt(Fun, Args, {Module, _FunctionAtom, PoolName, Opts}) ->
     Prefix = proplists:get_value(key_prefix, Opts, <<>>),
     Pattern = proplists:get_value(pattern, Opts),
-    Timeout = proplists:get_value(timeout, Opts, ?TIMEOUT),
+    Timeout = proplists:get_value(timeout, Opts, ?DEF_TIMEOUT),
     fun () ->
             Res = Fun(Args),
             ok = exec_invalidation(Module, PoolName, Res, Prefix, Pattern, Timeout),
