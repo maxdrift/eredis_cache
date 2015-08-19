@@ -1,6 +1,6 @@
 {application,eredis_cache,
              [{description,"Erlang caching library based on Redis"},
-              {vsn,"2.4.1"},
+              {vsn,"2.5.0"},
               {modules,[]},
               {registered,[]},
               {applications,[kernel,stdlib,lager,eredis_pool,quintana]},
