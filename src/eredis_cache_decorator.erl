@@ -21,8 +21,7 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
     FullKey = <<Prefix/binary, Key/binary>>,
     Timeout = proplists:get_value(timeout, Opts, ?DEF_TIMEOUT),
     PoolTimeout = proplists:get_value(pool_timeout, Opts, ?DEF_POOL_TIMEOUT),
-    FromCache = eredis_cache:get(PoolName, FullKey, Timeout, PoolTimeout),
-    case FromCache of
+    try eredis_cache:get(PoolName, FullKey, Timeout, PoolTimeout) of
         {ok, undefined} ->
             quintana:notify_spiral(
               {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"miss">>), 1}),
@@ -37,9 +36,16 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
                                                       ?DEF_VALIDITY),
                             Compression = proplists:get_value(compression, Opts,
                                                               ?DEF_COMPRESSION),
-                            ok = eredis_cache:set(PoolName, FullKey,
-                                                  R, Val, Compression,
-                                                  Timeout, PoolTimeout)
+                            try eredis_cache:set(PoolName, FullKey,
+                                                 R, Val, Compression,
+                                                 Timeout, PoolTimeout)
+                            catch
+                                ErrType:Reason ->
+                                    lager:warning("Eredis cache SET failed on"
+                                                  " function '~p': [~p:~p]",
+                                                  [Fun, ErrType, Reason]),
+                                    ok
+                            end
                     end,
                     ok = quintana:notify_timed(Timer),
                     Res
@@ -57,12 +63,18 @@ eredis_cache_pt(Fun, Args, {Module, FunctionAtom, PoolName, Opts}) ->
                     Result = Fun(Args),
                     ok = quintana:notify_timed(Timer),
                     Result
-            end;
-        {error, Err} ->
-            quintana:notify_spiral(
-              {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"get_error">>), 1}),
-            ok = quintana:notify_timed(Timer),
-            throw({error, {eredis_cache_pt, Err}})
+            end
+    catch
+        ErrType:Reason ->
+            lager:warning("Eredis cache GET failed on function '~p': [~p:~p]",
+                          [Fun, ErrType, Reason]),
+            fun () ->
+                    Result = Fun(Args),
+                    ok = quintana:notify_timed(Timer),
+                    quintana:notify_spiral(
+                      {?EREDIS_CACHE_FOLSOM_NAME(Prefix, <<"get_error">>), 1}),
+                    Result
+            end
     end.
 
 -spec eredis_cache_inv_pt(function(), [term()], {atom(), atom(), atom(), [term()]}) ->
@@ -74,8 +86,15 @@ eredis_cache_inv_pt(Fun, Args, {Module, _FunctionAtom, PoolName, Opts}) ->
     PoolTimeout = proplists:get_value(pool_timeout, Opts, ?DEF_POOL_TIMEOUT),
     fun () ->
             Res = Fun(Args),
-            ok = exec_invalidation(Module, PoolName, Res, Prefix,
-                                   Pattern, Timeout, PoolTimeout),
+            try exec_invalidation(Module, PoolName, Res, Prefix,
+                                  Pattern, Timeout, PoolTimeout)
+            catch
+                ErrType:Reason ->
+                    lager:warning("Eredis cache invalidation failed on"
+                                  " function '~p': [~p:~p]",
+                                  [Fun, ErrType, Reason]),
+                    ok
+            end,
             Res
     end.
 

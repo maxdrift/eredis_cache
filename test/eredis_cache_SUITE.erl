@@ -8,6 +8,7 @@
 -include_lib("decorator_pt/include/decorator_pt.hrl").
 
 -define(DEFAULT_POOL, eredis_cache_pool).
+-define(INVALID_POOL, invalid_pool).
 -define(NO_REDIS_POOL, eredis_cache_pool_no_redis).
 -define(RUNTIME_POOL, eredis_cache_runtime_pool).
 -define(DEFAULT_VALIDITY, 1).
@@ -73,6 +74,11 @@ groups() ->
       , t_cache_decorator_not_crashing
       , t_invalidate_decorator_not_crashing
       , t_create_fake_cache
+      ]},
+     {transparent_on_errors, [],
+      [
+       t_cache_decorator_transparent,
+       t_decorator_invalidate_transparent
       ]}
     ].
 
@@ -81,7 +87,8 @@ all() ->
      {group, cache_apis},
      {group, decorators},
      {group, start_stop_cache},
-     {group, redis_offline_on_startup}
+     {group, redis_offline_on_startup},
+     {group, transparent_on_errors}
     ].
 
 %% APIs
@@ -383,6 +390,19 @@ t_create_fake_cache(Config) ->
                                               Value, ?DEFAULT_VALIDITY),
     {error, no_connection} = eredis_cache:get(?RUNTIME_POOL, Key).
 
+%% Decorators transparency on errors
+
+t_cache_decorator_transparent(_Config) ->
+    Value = erlang:now(),
+    {Value, Timestamp} = echo9(Value),
+    ok = timer:sleep(timer:seconds(?DEFAULT_VALIDITY div 2)),
+    {Value, Timestamp2} = echo9(Value),
+    true = Timestamp < Timestamp2.
+
+t_decorator_invalidate_transparent(_Config) ->
+    {ok, <<"something">>} = set_something4(<<"something">>),
+    ok.
+
 %% Decorated setters
 
 ?EREDIS_CACHE(?DEFAULT_POOL, [{validity, ?DEFAULT_VALIDITY}]).
@@ -433,6 +453,11 @@ echo8(Value1, Value2, Value3, Value4) ->
     Timestamp = erlang:now(),
     {Value1, Value2, Value3, Value4, Timestamp}.
 
+?EREDIS_CACHE(?INVALID_POOL, [{validity, ?DEFAULT_VALIDITY}]).
+echo9(Value) ->
+    Timestamp = erlang:now(),
+    {Value, Timestamp}.
+
 %% Decorated setters
 
 ?EREDIS_CACHE_INVALIDATE(?DEFAULT_POOL, [{key_prefix, ?DEFAULT_PREFIX},
@@ -451,6 +476,11 @@ get_pattern({ok, Result}) ->
 ?EREDIS_CACHE_INVALIDATE(?NO_REDIS_POOL,
                          [{pattern, <<?DEFAULT_PREFIX/binary, "*">>}]).
 set_something3(Value) ->
+    {ok, Value}.
+
+?EREDIS_CACHE_INVALIDATE(?INVALID_POOL,
+                         [{pattern, <<?DEFAULT_PREFIX/binary, "*">>}]).
+set_something4(Value) ->
     {ok, Value}.
 
 %% Internal functions
